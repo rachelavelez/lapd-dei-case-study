@@ -1,0 +1,160 @@
+# Are `report_ids` unique in `arrests_2020_present`? 
+YES - all values are unique
+```
+SELECT DISTINCT Report_ID
+FROM `lapd-data.arrests_and_crime_reports_2020_present.arrests_2020_present`
+```
+
+# How many report types are there? 
+**2 Types**: Booking & RFC  
+*Booking* - PD registers and enters charges against a person believd to have violated the law.
+*RFC* - Release from Custody - officer charges a person and issues an order to appear in court.
+
+```
+SELECT DISTINCT Report_Type
+FROM `lapd-data.arrests_and_crime_reports_2020_present.arrests_2020_present`
+```
+
+# Find the total number of bookings vs RFCs
+
+`162323` bookings
+```
+SELECT COUNT (Report_Type)
+FROM `lapd-data.arrests_and_crime_reports_2020_present.arrests_2020_present`
+WHERE Report_Type = 'BOOKING'
+```
+
+`40881` RFC
+```
+SELECT COUNT (Report_Type)
+FROM `lapd-data.arrests_and_crime_reports_2020_present.arrests_2020_present`
+WHERE Report_Type = 'RFC'
+```
+
+# What are the different possible charges (descriptions)?
+`27` different charge descriptions without `null` (28 total descriptions incl. null)
+
+```
+SELECT DISTINCT Charge_Group_Description
+FROM `lapd-data.arrests_and_crime_reports_2020_present.arrests_2020_present`
+WHERE Charge_Group_Description <> 'null'
+```
+# What are the different possible charge codes?
+`3390` different charges (codes) found
+```
+SELECT DISTINCT Charge
+FROM `lapd-data.arrests_and_crime_reports_2020_present.arrests_2020_present`
+```
+
+# Looking at Crime
+
+Union both tables into one new table. Had to separate the initial CSV file to upload to BigQuery, 
+as the file was too large. Now, I can recombine and reivew as one table. I verified early on that the columns all matched.
+Saved results as `crime_combined`
+
+```
+SELECT *
+FROM `lapd-data.arrests_and_crime_reports_2020_present.crime_2020_present_1`
+
+UNION ALL
+
+SELECT * 
+FROM `lapd-data.arrests_and_crime_reports_2020_present.crime_2020_present_2`
+```
+
+
+# Are `DR_NO` values unique? 
+YES - all values are unique. Tallied total records for both tables & matched w/ results.
+
+```
+SELECT DISTINCT DR_NO
+FROM (
+  SELECT DR_NO FROM `lapd-data.arrests_and_crime_reports_2020_present.crime_2020_present_2`
+  UNION ALL
+  SELECT DR_NO FROM `lapd-data.arrests_and_crime_reports_2020_present.crime_2020_present_1` )
+```
+```
+SELECT DISTINCT DR_NO
+FROM `lapd-data.arrests_and_crime_reports_2020_present.crime_combined`
+```
+
+# Do the `DR_NO` and `Report_IDs` match from the data provided?
+No results
+
+```
+SELECT Report_ID
+FROM ((`lapd-data.arrests_and_crime_reports_2020_present.arrests_2020_present`
+INNER JOIN `lapd-data.arrests_and_crime_reports_2020_present.crime_2020_present_1` 
+ON `lapd-data.arrests_and_crime_reports_2020_present.arrests_2020_present`.Report_ID = `lapd-data.arrests_and_crime_reports_2020_present.crime_2020_present_1`.DR_NO)
+INNER JOIN `lapd-data.arrests_and_crime_reports_2020_present.crime_2020_present_2` 
+ON `lapd-data.arrests_and_crime_reports_2020_present.arrests_2020_present`.Report_ID =`lapd-data.arrests_and_crime_reports_2020_present.crime_2020_present_2`.DR_NO)
+```
+
+
+
+
+
+
+### Distinct crm descriptions (crime 2020): 
+```
+SELECT DISTINCT Crm_Cd_Desc
+FROM `lapd-data.arrests_and_crime_reports_2020_present.crime_combined`
+```
+Results: 138
+
+
+Added a new calculated column `reporting_timeframe` to find the difference between when 
+an incident occurred vs how long after it was reported
+
+```
+ALTER TABLE `lapd-data.arrests_and_crime_reports_2020_present.crime_combined`
+ADD COLUMN `reporting_timeframe` INTEGER;
+
+ALTER TABLE `lapd-data.arrests_and_crime_reports_2020_present.crime_combined`
+ALTER COLUMN reporting_timeframe SET DATA TYPE NUMERIC;
+
+UPDATE `lapd-data.arrests_and_crime_reports_2020_present.crime_combined`
+SET reporting_timeframe = date_diff(Date_Rptd, DATE_OCC, DAY)
+WHERE TRUE
+
+```
+
+Functional Analysis of reporting timeframes that may be able to be matched against other columns.
+
+SELECT MIN(reporting_timeframe)
+FROM `lapd-data.arrests_and_crime_reports_2020_present.crime_combined`
+
+Result: 0
+
+SELECT MAX(reporting_timeframe)
+FROM `lapd-data.arrests_and_crime_reports_2020_present.crime_combined`
+
+Result: 1172
+
+SELECT AVG(reporting_timeframe)
+FROM `lapd-data.arrests_and_crime_reports_2020_present.crime_combined`
+
+Result: 9.673277625
+
+To get the MODE (most frequently occuring #)
+
+SELECT reporting_timeframe, COUNT(1) AS frequency
+FROM `lapd-data.arrests_and_crime_reports_2020_present.crime_combined`
+WHERE reporting_timeframe IS NOT NULL
+GROUP BY reporting_timeframe
+ORDER BY frequency DESC 
+
+Result: 0 day (same day) reporting @ 339905 instances.
+~50% of the time it's reported same day, ~21% reported within 1 day
+
+
+Saved table and CSV file for future reference, if needed.
+
+Added a new column to the table as INTEGER at first (oops), so changed to Numeric.
+Set the value to be the date diff between date reported and date occurred. Confirmed
+the output matched what I saw in Google Sheets.
+
+Saved the new CSV file for further analysis in Tableau.
+
+
+
